@@ -1,0 +1,24 @@
+# 下载scannet数据集指定的一系列场景
+# Usage: expect download_scenes.sh scene_id1 scene_id2 ...
+# scannet下载命令：download-scannet.py -o [directory in which to download] --id scene0000_00
+# eg: expect download_scenes.expect scene0616_00 scene0012_00 scene0050_00 scene0084_00 scene0114_01 scene0279_00 scene0580_00 scene0603_00 scene0002_00 scene0617_00 scene0625_00 scene0721_00
+
+#!/usr/bin/expect -f
+# 调用此脚本时传入的场景ID
+set scene_ids [lrange $argv 0 end]
+
+# 遍历每个场景ID
+foreach scene_id $scene_ids {
+    # 启动一个交互式的python下载进程
+    spawn python download-scannet.py -o . --id $scene_id
+    # 等待提示按任意键继续
+    expect "Press any key to continue, or CTRL-C to exit."
+    # 发送一个"s"字符
+    send "s\r"
+    # 等待提示是否下载.sens文件
+    expect "Note: ScanNet v2 uses the same .sens files as ScanNet v1: Press 'n' to exclude downloading .sens files for each scan"
+    # 发送一个"n"字符
+    send "n\r"
+    # 等待下载进程结束
+    expect eof
+}

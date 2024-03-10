@@ -1,0 +1,132 @@
+# Date: 2024-03-09
+# 一、实验setting：接续normal_bg2的实验：①enable-uncertainty;②纠正depth-anything先验（disp->depth,以及尺度对齐gt_depth=gt_depth*5+0.5）；②根据uncertainty和uncertainty_grad增加对object的平整表面应用normal先验；
+train:
+  exp_name: scannet_normal_bg2-2
+  batch_size: 1 # image batch
+  num_rays: 1024
+  plot_freq: 20
+  save_freq: 20
+  chunk: 1024
+  mesh_resolution: 512
+  block_resolution: 512
+
+# 一般dataset矫正到单位球/立方体内
+dataset:
+  scan_id: '0616_00' # id=-1就是data_dir，否则就是data_dir/scene{id}
+  data_dir: /data/scannet/scans
+  num_images: 303
+
+  use_mono_depth: true  # 是否应用单目深图先验
+  use_mono_normal: true  # 是否应用单目法向先验
+  use_mask: true  # 是否应用mask先验
+  use_uncertainty: true  # 是否应用不确定性先验
+  importance_sampling: false  # 是否使用不确定性重要性采样
+
+
+model:
+  bound: 1.0 # 等于meta_data scene_box的radius：当为sphere时，表示球半径，否则表示立方体边界: [-bound, bound]^3
+  white_bg: true
+  density:
+    beta_init: 0.1
+    beta_min: 1e-4
+  object:
+    sdf:
+      d_in: 3
+      d_hidden: 256
+      n_layers: 2
+      skip: []  # 1-n_layers
+      geometric_init: true
+      bias: 0.5  # 初始化球半径
+      norm_weight: true
+      inside_outside: true  # default outside for object
+      enable_fourier: true # fourier
+      N_freqs: 6
+      enable_hashgrid: true # hashgrid, ↓ hashgrid参数
+      num_levels: 16
+      per_level_dim: 2
+      log2_hashmap_size: 19
+      base_resolution: 16
+      max_resolution: 2048
+      resolution_list: None
+
+      # plus: hashgrid渐进策略和数值梯度
+      enable_progressive: true
+      init_active_level: 4
+      active_step: 5000 # 激活层级步长
+      gradient_mode: numerical # analytical or numerical
+      taps: 4
+
+    rgb:
+      feat_dim: 256  # sdf feature dim即sdf.d_hidden
+      d_hidden: 256
+      n_layers: 2
+      skip: []
+      N_freqs: 3
+      encoding_view: spherical  # 'fourier' 或者 'spherical'
+      weight_norm: true
+      layer_norm: false
+      enable_app: true  # TODO: appearance embedding
+      app_dim: 8
+
+    osf:
+      enabled: true
+      mlp:
+        feat_dim: 256 # sdf feature dim即sdf.d_hidden
+        d_hidden: 256
+        n_layers: 4
+        skip: [ ]
+        N_freqs: 4
+        encoding: fourier  # 'fourier' or 'spherical'
+        weight_norm: true
+        layer_norm: false
+
+
+  background:
+    enabled: false
+    nerf:
+      d_hidden: 256
+      n_layers: 8
+      skip: [ 4 ]  # density network
+      d_hidden_rgb: 128
+      n_layers_rgb: 2
+      skip_rgb: [ ]
+      encoding: fourier
+      N_freqs: 10
+      encoding_view: spherical
+      N_freqs_view: 3
+      enable_app: true
+      app_dim: 32
+
+  # default error bounded sampler
+  sampler:
+    near: 0.
+    N_samples: 64  # 有效采样点数
+    N_samples_eval: 128  # 无偏估计评估每次迭代增加的采样点数
+    N_samples_extra: 32  # 最终无偏估计抽样点数
+    N_samples_bg: 32  # 背景采样点数
+    N_near: 1 # 表面附近采样点数(z_near)
+    eps: 0.1  # opacity error上限
+    beta_iters: 10  # 二分次数
+    max_total_iters: 5  # 最大迭代次数
+    take_intersection: true
+    intersection_type: cube # 'cube' or 'sphere'
+loss:
+  lambda_rgb: 1.0
+  lambda_eik: 0.05
+  lambda_smooth: 0.005
+  lambda_normal: 0.025
+  lambda_depth: 0.05
+  lambda_curvature: 0.0005 # 曲率损失
+#  lambda_2d_osf: 0.1
+#  lambda_3d_osf: 0.1
+#  lambda_mvs_osf: 0.1
+
+optim:
+  type: AdamW
+  lr: 5e-4
+  lr_scale_grid: 20.0
+  sched:
+    type: exponential_lr # 'two_steps_lr' or 'exponential_lr'
+    gamma: 0.1
+    two_steps: [180000, 240000] # 这里偏好设置为总steps的0.6和0.8
+    warm_up_end: 5000 # warm up steps
